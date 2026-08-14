@@ -4,6 +4,7 @@ test.rb
 mise.toml
 
 .rspec_status
+spec/examples.txt
 .rubocop_cache
 
 # Bundle directory
