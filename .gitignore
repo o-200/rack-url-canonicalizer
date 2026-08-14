@@ -1,0 +1,30 @@
+test.rb
+*.gem
+
+mise.toml
+
+.rspec_status
+.rubocop_cache
+
+# Bundle directory
+.bundle/
+vendor/bundle/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Temporary files
+tmp/
+*.log
