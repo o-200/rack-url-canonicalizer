@@ -31,5 +31,8 @@ jobs:
       - name: Run tests
         run: bundle exec rake
 
+      - name: Run RuboCop
+        run: bundle exec rubocop
+
       - name: Build gem
         run: gem build *.gemspec

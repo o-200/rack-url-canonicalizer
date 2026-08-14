@@ -17,10 +17,10 @@ module Rack
         @collapse_slashes = true
         @strip_trailing_slash = true
         @exclude_paths = []
-        @locale_param = "locale"
+        @locale_param = 'locale'
         @allowed_locales = nil
         @redirect_status = 301
-        @cache_control = "public, max-age=86400"
+        @cache_control = 'public, max-age=86400'
       end
 
       def allowed_locales_list

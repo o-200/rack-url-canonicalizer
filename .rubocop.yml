@@ -1,0 +1,41 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.0
+  SuggestExtensions: false
+  Exclude:
+    - 'vendor/**/*'
+    - 'tmp/**/*'
+    - '*.gem'
+
+Style/Documentation:
+  Enabled: false
+
+Layout/LineLength:
+  Max: 120
+  Exclude:
+    - 'spec/**/*'
+    - 'rack-url-canonicalizer.gemspec'
+
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - 'rack-url-canonicalizer.gemspec'
+
+Metrics/AbcSize:
+  Max: 50
+
+Metrics/CyclomaticComplexity:
+  Max: 25
+
+Metrics/PerceivedComplexity:
+  Max: 25
+
+Metrics/MethodLength:
+  Max: 50
+
+Gemspec/DevelopmentDependencies:
+  Enabled: false
+
+Naming/FileName:
+  Exclude:
+    - 'lib/rack-url-canonicalizer.rb'

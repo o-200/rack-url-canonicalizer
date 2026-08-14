@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require "rack"
-require_relative "url_canonicalizer/version"
-require_relative "url_canonicalizer/configuration"
-require_relative "url_canonicalizer/railtie"
+require 'rack'
+require_relative 'url_canonicalizer/version'
+require_relative 'url_canonicalizer/configuration'
+require_relative 'url_canonicalizer/railtie'
 
 module Rack
   class UrlCanonicalizer
@@ -37,25 +37,21 @@ module Rack
       return @app.call(env) unless req.get? || req.head?
       return @app.call(env) if xhr_request?(req, env)
 
-      path_info = env["PATH_INFO"] || ""
+      path_info = env['PATH_INFO'] || ''
 
-      if excluded_path?(path_info)
-        return @app.call(env)
-      end
+      return @app.call(env) if excluded_path?(path_info)
 
-      host = req.host || ""
-      host_redirect = @config.strip_www && host.start_with?("www.")
-      target_host = host_redirect ? host.sub(/\Awww\./, "") : host
+      host = req.host || ''
+      host_redirect = @config.strip_www && host.start_with?('www.')
+      target_host = host_redirect ? host.sub(/\Awww\./, '') : host
 
       raw_path = path_info
       normalized_path = raw_path.dup
 
-      if @config.collapse_slashes
-        normalized_path.gsub!(%r{/{2,}}, "/")
-      end
+      normalized_path.gsub!(%r{/{2,}}, '/') if @config.collapse_slashes
 
-      if @config.strip_trailing_slash && normalized_path.length > 1 && normalized_path.end_with?("/")
-        normalized_path.chomp!("/")
+      if @config.strip_trailing_slash && normalized_path.length > 1 && normalized_path.end_with?('/')
+        normalized_path.chomp!('/')
       end
 
       query_params = req.GET.dup
@@ -73,20 +69,20 @@ module Rack
       if host_redirect || raw_path != normalized_path || locale_redirect
         scheme = req.scheme
         port = req.port
-        port_part = [ 80, 443 ].include?(port) ? "" : ":#{port}"
+        port_part = [80, 443].include?(port) ? '' : ":#{port}"
 
         new_query = Rack::Utils.build_nested_query(query_params)
-        new_url = +"#{scheme}://#{target_host}#{port_part}#{normalized_path}"
+        new_url = "#{scheme}://#{target_host}#{port_part}#{normalized_path}"
         new_url << "?#{new_query}" unless new_query.empty?
 
         return [
           @config.redirect_status,
           {
-            "location" => new_url,
-            "content-type" => "text/html",
-            "cache-control" => @config.cache_control
+            'location' => new_url,
+            'content-type' => 'text/html',
+            'cache-control' => @config.cache_control
           },
-          [ redirect_body(@config.redirect_status) ]
+          [redirect_body(@config.redirect_status)]
         ]
       end
 
@@ -98,7 +94,7 @@ module Rack
     def xhr_request?(req, env)
       return true if req.respond_to?(:xhr?) && req.xhr?
 
-      env["HTTP_X_REQUESTED_WITH"] == "XMLHttpRequest"
+      env['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest'
     end
 
     def excluded_path?(path_info)
@@ -111,11 +107,11 @@ module Rack
 
     def redirect_body(status)
       case status
-      when 301 then "Moved Permanently"
-      when 302 then "Found"
-      when 307 then "Temporary Redirect"
-      when 308 then "Permanent Redirect"
-      else "Redirected"
+      when 301 then 'Moved Permanently'
+      when 302 then 'Found'
+      when 307 then 'Temporary Redirect'
+      when 308 then 'Permanent Redirect'
+      else 'Redirected'
       end
     end
   end
