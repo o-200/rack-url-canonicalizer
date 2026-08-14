@@ -7,6 +7,8 @@ mise.toml
 spec/examples.txt
 .rubocop_cache
 
+Gemfile.lock
+
 # Bundle directory
 .bundle/
 vendor/bundle/
