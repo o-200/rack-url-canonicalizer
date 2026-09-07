@@ -11,10 +11,7 @@ Style/Documentation:
   Enabled: false
 
 Layout/LineLength:
-  Max: 120
-  Exclude:
-    - 'spec/**/*'
-    - 'rack-url-canonicalizer.gemspec'
+  Enabled: false
 
 Metrics/BlockLength:
   Exclude:
