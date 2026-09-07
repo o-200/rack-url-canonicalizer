@@ -61,6 +61,155 @@ RSpec.describe Rack::UrlCanonicalizer do
     end
   end
 
+  describe 'enforce_www' do
+    context 'when enforce_www is true' do
+      let(:options) { { enforce_www: true } }
+
+      it 'redirects naked domain to www' do
+        get 'http://example.com/path'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://www.example.com/path')
+        expect(last_response.headers['cache-control']).to eq('public, max-age=86400')
+      end
+
+      it 'automatically disables strip_www and does not redirect www host' do
+        get 'http://www.example.com/path'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'preserves non-standard port' do
+        get 'http://example.com:8080/path'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://www.example.com:8080/path')
+      end
+
+      it 'preserves query parameters' do
+        get 'http://example.com/path?foo=bar&baz=qux'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://www.example.com/path?foo=bar&baz=qux')
+      end
+
+      it 'does not redirect host with case-insensitive www prefix' do
+        get 'http://WWW.example.com/path'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'does not redirect localhost or dev domains' do
+        get 'http://localhost/path'
+        expect(last_response.status).to eq(200)
+
+        get 'http://sub.localhost:3000/path'
+        expect(last_response.status).to eq(200)
+
+        get 'http://app.local/path'
+        expect(last_response.status).to eq(200)
+
+        get 'http://app.test/path'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'does not redirect IPv4 addresses' do
+        get 'http://127.0.0.1/path'
+        expect(last_response.status).to eq(200)
+
+        get 'http://192.168.1.1:3000/path'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'does not redirect IPv6 addresses' do
+        get 'http://[::1]:3000/path'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'ignores non-GET/HEAD requests' do
+        post 'http://example.com/path'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'ignores XHR requests' do
+        get 'http://example.com/path', {}, { 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest' }
+        expect(last_response.status).to eq(200)
+      end
+    end
+
+    context 'when prefer_www alias is used' do
+      let(:options) { { prefer_www: true } }
+
+      it 'redirects naked domain to www' do
+        get 'http://example.com/path'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://www.example.com/path')
+      end
+    end
+
+    context 'when enforce_www is false (default)' do
+      it 'does not redirect non-www host' do
+        get 'http://example.com/path'
+        expect(last_response.status).to eq(200)
+      end
+    end
+
+    context 'when both strip_www and enforce_www are true' do
+      it 'raises ArgumentError on initialization' do
+        expect do
+          Rack::UrlCanonicalizer.new(inner_app, strip_www: true, enforce_www: true)
+        end.to raise_error(ArgumentError, /Conflicting options/)
+      end
+
+      it 'raises ArgumentError when prefer_www is used with strip_www' do
+        expect do
+          Rack::UrlCanonicalizer.new(inner_app, strip_www: true, prefer_www: true)
+        end.to raise_error(ArgumentError, /Conflicting options/)
+      end
+    end
+
+    context 'when both strip_www and enforce_www are false' do
+      let(:options) { { strip_www: false, enforce_www: false } }
+
+      it 'does not redirect www or non-www hosts' do
+        get 'http://www.example.com/path'
+        expect(last_response.status).to eq(200)
+
+        get 'http://example.com/path'
+        expect(last_response.status).to eq(200)
+      end
+    end
+  end
+
+  describe 'exclude_hosts' do
+    let(:options) do
+      {
+        enforce_www: true,
+        exclude_hosts: [
+          'api.example.com',
+          /\Ainternal\./,
+          ->(host) { host.start_with?('skip.') }
+        ]
+      }
+    end
+
+    it 'bypasses enforce_www for excluded hosts matching string' do
+      get 'http://api.example.com/path'
+      expect(last_response.status).to eq(200)
+    end
+
+    it 'bypasses enforce_www for excluded hosts matching regexp' do
+      get 'http://internal.example.com/path'
+      expect(last_response.status).to eq(200)
+    end
+
+    it 'bypasses enforce_www for excluded hosts matching proc' do
+      get 'http://skip.example.com/path'
+      expect(last_response.status).to eq(200)
+    end
+
+    it 'still canonicalizes non-excluded hosts' do
+      get 'http://example.com/path'
+      expect(last_response.status).to eq(301)
+      expect(last_response.headers['location']).to eq('http://www.example.com/path')
+    end
+  end
+
   describe 'collapse_slashes' do
     context 'when collapse_slashes is true (default)' do
       it 'collapses multiple consecutive slashes into a single slash' do
@@ -168,12 +317,40 @@ RSpec.describe Rack::UrlCanonicalizer do
   end
 
   describe 'combined normalization' do
-    let(:options) { { allowed_locales: %w[en ru] } }
+    context 'with strip_www (default)' do
+      let(:options) { { allowed_locales: %w[en ru] } }
 
-    it 'performs all canonicalizations in a single redirect' do
-      get 'http://www.example.com/catalog//item/?locale=invalid&sort=asc'
+      it 'performs all canonicalizations in a single redirect' do
+        get 'http://www.example.com/catalog//item/?locale=invalid&sort=asc'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/catalog/item?sort=asc')
+      end
+    end
+
+    context 'with enforce_www' do
+      let(:options) { { enforce_www: true, allowed_locales: %w[en ru] } }
+
+      it 'performs www enforcement, path normalization, and locale stripping in a single redirect' do
+        get 'http://example.com/catalog//item/?locale=invalid&sort=asc'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://www.example.com/catalog/item?sort=asc')
+      end
+    end
+  end
+
+  describe 'global configuration' do
+    after do
+      Rack::UrlCanonicalizer.reset_configuration!
+    end
+
+    it 'allows configuring enforce_www globally' do
+      Rack::UrlCanonicalizer.configure do |config|
+        config.enforce_www = true
+      end
+
+      get 'http://example.com/test'
       expect(last_response.status).to eq(301)
-      expect(last_response.headers['location']).to eq('http://example.com/catalog/item?sort=asc')
+      expect(last_response.headers['location']).to eq('http://www.example.com/test')
     end
   end
 
