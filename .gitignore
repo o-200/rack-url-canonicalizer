@@ -31,3 +31,5 @@ vendor/bundle/
 # Temporary files
 tmp/
 *.log
+
+spec/examples.txt
