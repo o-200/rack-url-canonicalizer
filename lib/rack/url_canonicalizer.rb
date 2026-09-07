@@ -7,6 +7,14 @@ require_relative 'url_canonicalizer/railtie'
 
 module Rack
   class UrlCanonicalizer
+    IPV4_REGEX = /\A\d{1,3}(?:\.\d{1,3}){3}\z/
+    REDIRECT_BODIES = {
+      301 => 'Moved Permanently',
+      302 => 'Found',
+      307 => 'Temporary Redirect',
+      308 => 'Permanent Redirect'
+    }.freeze
+
     class << self
       def configuration
         @configuration ||= Configuration.new
@@ -25,71 +33,46 @@ module Rack
       @app = app
       @config = self.class.configuration.dup
 
+      validate_options!(options)
+
       options.each do |key, value|
-        writer = "#{key}="
-        @config.send(writer, value) if @config.respond_to?(writer)
+        @config.public_send("#{key}=", value) if @config.respond_to?("#{key}=")
       end
     end
 
     def call(env)
       req = Rack::Request.new(env)
+      return @app.call(env) unless (req.get? || req.head?) && !xhr_request?(req, env)
 
-      return @app.call(env) unless req.get? || req.head?
-      return @app.call(env) if xhr_request?(req, env)
+      path = env['PATH_INFO'] || ''
+      return @app.call(env) if excluded_path?(path)
 
-      path_info = env['PATH_INFO'] || ''
-
-      return @app.call(env) if excluded_path?(path_info)
-
-      host = req.host || ''
-      host_redirect = @config.strip_www && host.start_with?('www.')
-      target_host = host_redirect ? host.sub(/\Awww\./, '') : host
-
-      raw_path = path_info
-      normalized_path = raw_path.dup
-
-      normalized_path.gsub!(%r{/{2,}}, '/') if @config.collapse_slashes
-
-      if @config.strip_trailing_slash && normalized_path.length > 1 && normalized_path.end_with?('/')
-        normalized_path.chomp!('/')
-      end
-
+      target_host, host_redirect = normalize_host(req.host || '')
+      norm_path = normalize_path(path)
       query_params = req.GET.dup
-      locale_redirect = false
-      locale_key = @config.locale_param
+      locale_redirect = locale_redirect?(query_params)
 
-      if locale_key && query_params.key?(locale_key)
-        allowed = @config.allowed_locales_list
-        if allowed && !allowed.include?(query_params[locale_key].to_s)
-          query_params.delete(locale_key)
-          locale_redirect = true
-        end
-      end
+      return @app.call(env) unless host_redirect || path != norm_path || locale_redirect
 
-      if host_redirect || raw_path != normalized_path || locale_redirect
-        scheme = req.scheme
-        port = req.port
-        port_part = [80, 443].include?(port) ? '' : ":#{port}"
-
-        new_query = Rack::Utils.build_nested_query(query_params)
-        new_url = "#{scheme}://#{target_host}#{port_part}#{normalized_path}"
-        new_url << "?#{new_query}" unless new_query.empty?
-
-        return [
-          @config.redirect_status,
-          {
-            'location' => new_url,
-            'content-type' => 'text/html',
-            'cache-control' => @config.cache_control
-          },
-          [redirect_body(@config.redirect_status)]
-        ]
-      end
-
-      @app.call(env)
+      [
+        @config.redirect_status,
+        {
+          'location' => redirect_url(req, target_host, norm_path, query_params),
+          'content-type' => 'text/html',
+          'cache-control' => @config.cache_control
+        },
+        [REDIRECT_BODIES.fetch(@config.redirect_status, 'Redirected')]
+      ]
     end
 
     private
+
+    def validate_options!(options)
+      strip = options[:strip_www] || options['strip_www']
+      enforce = options[:enforce_www] || options['enforce_www'] || options[:prefer_www] || options['prefer_www']
+
+      raise ArgumentError, 'Conflicting options: cannot enable both :strip_www and :enforce_www' if strip && enforce
+    end
 
     def xhr_request?(req, env)
       return true if req.respond_to?(:xhr?) && req.xhr?
@@ -100,19 +83,60 @@ module Rack
     def excluded_path?(path_info)
       return false if @config.exclude_paths.nil? || @config.exclude_paths.empty?
 
-      @config.exclude_paths.any? do |prefix|
-        path_info.start_with?(prefix)
+      @config.exclude_paths.any? { |prefix| path_info.start_with?(prefix) }
+    end
+
+    def excluded_host?(host)
+      return false if @config.exclude_hosts.nil? || @config.exclude_hosts.empty?
+
+      @config.exclude_hosts.any? do |pattern|
+        case pattern
+        when Regexp then pattern.match?(host)
+        when Proc then pattern.call(host)
+        else pattern.to_s.casecmp?(host)
+        end
       end
     end
 
-    def redirect_body(status)
-      case status
-      when 301 then 'Moved Permanently'
-      when 302 then 'Found'
-      when 307 then 'Temporary Redirect'
-      when 308 then 'Permanent Redirect'
-      else 'Redirected'
-      end
+    def normalize_host(host)
+      return [host, false] if excluded_host?(host)
+      return [host.sub(/\Awww\./i, ''), true] if @config.strip_www && host.downcase.start_with?('www.')
+      return ["www.#{host}", true] if @config.enforce_www && should_enforce_www?(host)
+
+      [host, false]
+    end
+
+    def should_enforce_www?(host)
+      return false if host.empty? ||
+                      host.downcase.start_with?('www.') ||
+                      host == 'localhost' ||
+                      host.end_with?('.localhost', '.local', '.test')
+
+      !host.match?(IPV4_REGEX) && !host.include?(':')
+    end
+
+    def normalize_path(path)
+      path = path.gsub(%r{/{2,}}, '/') if @config.collapse_slashes
+      path = path.chomp('/') if @config.strip_trailing_slash && path.length > 1 && path.end_with?('/')
+      path
+    end
+
+    def locale_redirect?(query_params)
+      key = @config.locale_param
+      return false unless key && query_params.key?(key)
+
+      allowed = @config.allowed_locales_list
+      return false if allowed&.include?(query_params[key].to_s)
+
+      query_params.delete(key)
+      true
+    end
+
+    def redirect_url(req, host, path, query_params)
+      port = [80, 443].include?(req.port) ? '' : ":#{req.port}"
+      query = Rack::Utils.build_nested_query(query_params)
+      url = "#{req.scheme}://#{host}#{port}#{path}"
+      query.empty? ? url : "#{url}?#{query}"
     end
   end
 end

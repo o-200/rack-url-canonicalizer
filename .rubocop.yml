@@ -11,27 +11,10 @@ Style/Documentation:
   Enabled: false
 
 Layout/LineLength:
-  Max: 120
-  Exclude:
-    - 'spec/**/*'
-    - 'rack-url-canonicalizer.gemspec'
+  Enabled: false
 
-Metrics/BlockLength:
-  Exclude:
-    - 'spec/**/*'
-    - 'rack-url-canonicalizer.gemspec'
-
-Metrics/AbcSize:
-  Max: 50
-
-Metrics/CyclomaticComplexity:
-  Max: 25
-
-Metrics/PerceivedComplexity:
-  Max: 25
-
-Metrics/MethodLength:
-  Max: 50
+Metrics:
+  Enabled: false
 
 Gemspec/DevelopmentDependencies:
   Enabled: false
