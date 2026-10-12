@@ -6,7 +6,8 @@ It automatically canonicalizes incoming request URLs to prevent search engine **
 1. Stripping `www.` or enforcing `www.` sub-domain prefix.
 2. Collapsing duplicate slashes (`//path//to` ➔ `/path/to`).
 3. Stripping trailing slashes from paths (`/path/` ➔ `/path`).
-4. Validating `locale` GET query parameters against an allowed list and stripping invalid locales.
+4. Canonicalizing URL paths to lowercase (`/About-Us` ➔ `/about-us`), globally or selectively.
+5. Validating `locale` GET query parameters against an allowed list and stripping invalid locales.
 
 ---
 
@@ -16,7 +17,7 @@ Search engines (Google, Yandex, Bing) treat every unique URL string as a distinc
 
 This gem is essential when:
 - **Protecting SEO & Domain Authority**: You need to prevent index cannibalization caused by variations like `example.com/item` vs. `www.example.com/item`, `example.com/item/`, or `example.com//item`.
-- **Enforcing Single Canonical URLs**: You want incoming traffic from user typos or legacy backlinks to be redirected with an HTTP 301 (Moved Permanently) status to a single canonical address before reaching your application logic.
+- **Enforcing Single Canonical URLs**: You want incoming traffic from user typos, mobile keyboard auto-capitalization, or legacy backlinks to be redirected with an HTTP 301 (Moved Permanently) status to a single canonical address before reaching your application logic.
 - **Handling Multi-Locale Query Parameters**: Your app supports localization (e.g. `?locale=en`) and you want to sanitize or discard invalid/malformed locale parameters (e.g. `?locale=xyz`) that would otherwise generate infinite duplicate URL variants.
 - **High-Performance Early Redirects**: You want URL normalization to happen at the lightweight Rack middleware layer—avoiding unnecessary Rails controller instantiations, routing checks, or database queries.
 - **Simplified Deployment with Kamal & Modern Stacks**: Ideal for containerized setups deployed with **Kamal**, **Thruster**, or Docker, where configuring and maintaining separate Nginx/Caddy redirect rules or complex DNS edge layers adds unnecessary overhead. This gem handles canonicalization directly inside your application stack for fast, zero-config deployments.
@@ -48,6 +49,9 @@ bundle install
 | `enforce_www` | `Boolean` | `false` | Prepends `www.` to requests lacking it (aliased as `prefer_www`). Automatically skips localhost and IP addresses. |
 | `collapse_slashes` | `Boolean` | `true` | Replaces multiple slashes `//` with `/`. |
 | `strip_trailing_slash` | `Boolean` | `true` | Removes trailing slash from path (except root `/`). |
+| `downcase_path` | `Boolean` | `false` | Converts path to lowercase (e.g. `/About-Us` ➔ `/about-us`). Query string casing is preserved. |
+| `downcase_paths` | `Array<String \| Regexp \| Proc> \| Boolean` | `nil` | Selective allowlist: only paths matching these prefixes or patterns are downcased. |
+| `downcase_exclude_paths` | `Array<String \| Regexp \| Proc>` | `[]` | Array of path prefixes, patterns, or procs to bypass from downcasing (preserves casing for tokens/IDs). |
 | `exclude_paths` | `Array<String>` | `[]` | Array of path prefixes to bypass (e.g. `%w[/api /assets]`). |
 | `exclude_hosts` | `Array<String \| Regexp \| Proc>` | `[]` | Array of hosts or patterns to bypass from host redirection. |
 | `locale_param` | `String` | `"locale"` | GET parameter key for locale. |
@@ -64,13 +68,26 @@ bundle install
 In `config/application.rb`:
 
 ```ruby
-# Strip www (default):
+# Strip www, normalize paths, and enforce lowercase:
 config.middleware.use Rack::UrlCanonicalizer,
   strip_www: true,
   collapse_slashes: true,
   strip_trailing_slash: true,
+  downcase_path: true,
   exclude_paths: %w[/api /assets /up],
   allowed_locales: -> { I18n.available_locales }
+
+# Or selective downcasing for specific marketing / content routes:
+config.middleware.use Rack::UrlCanonicalizer,
+  downcase_paths: [
+    "/about",
+    "/contribution",
+    "/pricing",
+    %r{\A/(docs|faq)/}i
+  ],
+  downcase_exclude_paths: [
+    %r{\A/invites/[A-Za-z0-9_-]+}
+  ]
 
 # Or enforce www (example.com -> www.example.com):
 config.middleware.use Rack::UrlCanonicalizer,
@@ -86,6 +103,7 @@ In `config.ru`:
 require "rack/url_canonicalizer"
 
 use Rack::UrlCanonicalizer,
+  downcase_path: true,
   enforce_www: true,
   exclude_paths: ["/api"]
 
@@ -100,6 +118,7 @@ Alternatively, set global defaults:
 Rack::UrlCanonicalizer.configure do |config|
   config.enforce_www = true
   config.collapse_slashes = true
+  config.downcase_path = true
   config.allowed_locales = %w[en ru es]
 end
 

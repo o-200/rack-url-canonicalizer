@@ -5,6 +5,9 @@ module Rack
     class Configuration
       attr_accessor :collapse_slashes,
                     :strip_trailing_slash,
+                    :downcase_path,
+                    :downcase_paths,
+                    :downcase_exclude_paths,
                     :exclude_paths,
                     :exclude_hosts,
                     :locale_param,
@@ -18,6 +21,9 @@ module Rack
         @enforce_www = false
         @collapse_slashes = true
         @strip_trailing_slash = true
+        @downcase_path = false
+        @downcase_paths = nil
+        @downcase_exclude_paths = []
         @exclude_paths = []
         @exclude_hosts = []
         @locale_param = 'locale'
