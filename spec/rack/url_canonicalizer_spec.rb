@@ -271,6 +271,172 @@ RSpec.describe Rack::UrlCanonicalizer do
     end
   end
 
+  describe 'downcase_path' do
+    context 'when downcase_path is false (default)' do
+      it 'does not redirect uppercase or mixed-case paths' do
+        get 'http://example.com/About-Us'
+        expect(last_response.status).to eq(200)
+
+        get 'http://example.com/CONTRIBUTION'
+        expect(last_response.status).to eq(200)
+      end
+    end
+
+    context 'when downcase_path is true' do
+      let(:options) { { downcase_path: true } }
+
+      it 'redirects mixed-case paths to lowercase' do
+        get 'http://example.com/About-Us'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/about-us')
+      end
+
+      it 'redirects full uppercase paths to lowercase' do
+        get 'http://example.com/CONTRIBUTION'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/contribution')
+      end
+
+      it 'redirects nested mixed-case paths to lowercase' do
+        get 'http://example.com/Blog/2026/My-First-Post'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/blog/2026/my-first-post')
+      end
+
+      it 'does not redirect already lowercase paths' do
+        get 'http://example.com/about-us'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'preserves query parameters and their exact casing' do
+        get 'http://example.com/About-Us?Token=AbC123XyZ&ref=MainCampaign'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/about-us?Token=AbC123XyZ&ref=MainCampaign')
+      end
+
+      it 'preserves non-standard port' do
+        get 'http://example.com:8080/About-Us'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com:8080/about-us')
+      end
+
+      it 'ignores non-GET/HEAD requests' do
+        post 'http://example.com/About-Us'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'ignores XHR requests' do
+        get 'http://example.com/About-Us', {}, { 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest' }
+        expect(last_response.status).to eq(200)
+      end
+    end
+  end
+
+  describe 'downcase_paths (selective route downcasing)' do
+    context 'with array of string prefixes' do
+      let(:options) { { downcase_paths: ['/about', '/contribution'] } }
+
+      it 'downcases matching string prefixes' do
+        get 'http://example.com/About-Us'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/about-us')
+
+        get 'http://example.com/CONTRIBUTION'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/contribution')
+      end
+
+      it 'does not downcase non-matching paths' do
+        get 'http://example.com/Pricing-Plans'
+        expect(last_response.status).to eq(200)
+      end
+    end
+
+    context 'with string prefix lacking leading slash' do
+      let(:options) { { downcase_paths: ['about'] } }
+
+      it 'matches and downcases the route' do
+        get 'http://example.com/About-Us'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/about-us')
+      end
+    end
+
+    context 'with regular expression' do
+      let(:options) { { downcase_paths: [%r{\A/(docs|faq)/}i] } }
+
+      it 'downcases paths matching regexp' do
+        get 'http://example.com/Docs/Getting-Started'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/docs/getting-started')
+      end
+
+      it 'does not downcase paths not matching regexp' do
+        get 'http://example.com/Blog/Post-1'
+        expect(last_response.status).to eq(200)
+      end
+    end
+
+    context 'with Proc' do
+      let(:options) { { downcase_paths: ->(path) { path.downcase.start_with?('/blog') } } }
+
+      it 'downcases when proc returns true' do
+        get 'http://example.com/Blog/My-Article'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/blog/my-article')
+      end
+
+      it 'does not downcase when proc returns false' do
+        get 'http://example.com/Shop/Item'
+        expect(last_response.status).to eq(200)
+      end
+    end
+
+    context 'when downcase_paths is true' do
+      let(:options) { { downcase_paths: true } }
+
+      it 'downcases all paths' do
+        get 'http://example.com/Anything-Goes'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/anything-goes')
+      end
+    end
+  end
+
+  describe 'downcase_exclude_paths' do
+    let(:options) do
+      {
+        downcase_path: true,
+        downcase_exclude_paths: [
+          '/keep-case',
+          %r{\A/invites/[A-Za-z0-9_-]+}
+        ]
+      }
+    end
+
+    it 'downcases normal routes' do
+      get 'http://example.com/About-Us'
+      expect(last_response.status).to eq(301)
+      expect(last_response.headers['location']).to eq('http://example.com/about-us')
+    end
+
+    it 'preserves casing for excluded string prefix' do
+      get 'http://example.com/keep-case/SpecialToken123'
+      expect(last_response.status).to eq(200)
+    end
+
+    it 'preserves casing for excluded regexp' do
+      get 'http://example.com/invites/AbCd123XyZ'
+      expect(last_response.status).to eq(200)
+    end
+
+    it 'still applies slash collapsing and trailing slash stripping to excluded routes' do
+      get 'http://example.com//invites/AbCd123XyZ/'
+      expect(last_response.status).to eq(301)
+      expect(last_response.headers['location']).to eq('http://example.com/invites/AbCd123XyZ')
+    end
+  end
+
   describe 'allowed_locales' do
     context 'with array of allowed locales' do
       let(:options) { { allowed_locales: %w[en ru] } }
@@ -336,6 +502,25 @@ RSpec.describe Rack::UrlCanonicalizer do
         expect(last_response.headers['location']).to eq('http://www.example.com/catalog/item?sort=asc')
       end
     end
+    context 'with strip_www and downcase_path' do
+      let(:options) { { downcase_path: true, allowed_locales: %w[en ru] } }
+
+      it 'performs www stripping, path downcasing, slash collapsing, and locale stripping in a single redirect' do
+        get 'http://www.example.com/Catalog//Item/?locale=invalid&sort=asc'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/catalog/item?sort=asc')
+      end
+    end
+
+    context 'with enforce_www and downcase_path' do
+      let(:options) { { enforce_www: true, downcase_path: true, allowed_locales: %w[en ru] } }
+
+      it 'performs www enforcement, path downcasing, and locale stripping in a single redirect' do
+        get 'http://example.com/Catalog//Item/?locale=invalid&sort=asc'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://www.example.com/catalog/item?sort=asc')
+      end
+    end
   end
 
   describe 'global configuration' do
@@ -351,6 +536,16 @@ RSpec.describe Rack::UrlCanonicalizer do
       get 'http://example.com/test'
       expect(last_response.status).to eq(301)
       expect(last_response.headers['location']).to eq('http://www.example.com/test')
+    end
+
+    it 'allows configuring downcase_path globally' do
+      Rack::UrlCanonicalizer.configure do |config|
+        config.downcase_path = true
+      end
+
+      get 'http://example.com/About-Us'
+      expect(last_response.status).to eq(301)
+      expect(last_response.headers['location']).to eq('http://example.com/about-us')
     end
   end
 

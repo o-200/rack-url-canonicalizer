@@ -118,7 +118,39 @@ module Rack
     def normalize_path(path)
       path = path.gsub(%r{/{2,}}, '/') if @config.collapse_slashes
       path = path.chomp('/') if @config.strip_trailing_slash && path.length > 1 && path.end_with?('/')
+      path = path.downcase if should_downcase_path?(path)
       path
+    end
+
+    def should_downcase_path?(path)
+      return false if downcase_excluded?(path)
+
+      if @config.downcase_paths == true
+        true
+      elsif @config.downcase_paths
+        match_path_patterns?(@config.downcase_paths, path)
+      else
+        @config.downcase_path
+      end
+    end
+
+    def downcase_excluded?(path)
+      return false if @config.downcase_exclude_paths.nil? || @config.downcase_exclude_paths.empty?
+
+      match_path_patterns?(@config.downcase_exclude_paths, path)
+    end
+
+    def match_path_patterns?(patterns, path)
+      Array(patterns).any? do |pattern|
+        case pattern
+        when Regexp then pattern.match?(path) || pattern.match?(path.downcase)
+        when Proc then pattern.call(path)
+        else
+          prefix = pattern.to_s.downcase
+          prefix = "/#{prefix}" unless prefix.start_with?('/')
+          path.downcase.start_with?(prefix)
+        end
+      end
     end
 
     def locale_redirect?(query_params)
