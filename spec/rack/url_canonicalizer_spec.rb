@@ -437,6 +437,96 @@ RSpec.describe Rack::UrlCanonicalizer do
     end
   end
 
+  describe 'downcase_exclude_rails_paths' do
+    context 'when downcase_path is true' do
+      let(:options) { { downcase_path: true } }
+
+      it 'preserves case for Active Storage blob redirects with signed IDs' do
+        get 'http://example.com/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaHBCZz09In19--678b88/Avatar.PNG'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'preserves case for Active Storage representations' do
+        get 'http://example.com/rails/active_storage/representations/redirect/eyJfcmFpbHMi.../variationKey123/Image.JPG'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'preserves case for Active Storage disk path' do
+        get 'http://example.com/rails/active_storage/disk/EncodedKey123/Document.PDF'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'preserves case for other Rails internal routes (mailers, action_mailbox, conductor)' do
+        get 'http://example.com/rails/mailers/UserMailer/WelcomeEmail'
+        expect(last_response.status).to eq(200)
+
+        get 'http://example.com/rails/action_mailbox/relay/InboundEmails'
+        expect(last_response.status).to eq(200)
+
+        get 'http://example.com/rails/conductor/action_mailbox/inbound_emails/New'
+        expect(last_response.status).to eq(200)
+
+        get 'http://example.com/rails/info/Routes'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'preserves case for exact /rails path' do
+        get 'http://example.com/rails'
+        expect(last_response.status).to eq(200)
+      end
+
+      it 'still applies slash collapsing, trailing slash stripping, and host normalization on Rails paths' do
+        get 'http://www.example.com//rails/active_storage/blobs/redirect/eyJf.../Avatar.PNG/'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/rails/active_storage/blobs/redirect/eyJf.../Avatar.PNG')
+      end
+
+      it 'does not exclude business routes starting with rails (no false positives)' do
+        get 'http://example.com/railservice/Status'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/railservice/status')
+
+        get 'http://example.com/railway/Schedule'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/railway/schedule')
+
+        get 'http://example.com/railroad/Tracks'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/railroad/tracks')
+      end
+
+      it 'does not lose Rails path exclusion when custom downcase_exclude_paths are set' do
+        app_with_custom = Rack::UrlCanonicalizer.new(
+          inner_app,
+          downcase_path: true,
+          downcase_exclude_paths: ['/my-token']
+        )
+        env = Rack::MockRequest.env_for('http://example.com/rails/active_storage/blobs/redirect/eyJf.../Avatar.PNG')
+        status, _, _ = app_with_custom.call(env)
+        expect(status).to eq(200)
+
+        env2 = Rack::MockRequest.env_for('http://example.com/my-token/AbCd')
+        status2, _, _ = app_with_custom.call(env2)
+        expect(status2).to eq(200)
+
+        env3 = Rack::MockRequest.env_for('http://example.com/other-route/Upper')
+        status3, headers3, _ = app_with_custom.call(env3)
+        expect(status3).to eq(301)
+        expect(headers3['location']).to eq('http://example.com/other-route/upper')
+      end
+    end
+
+    context 'when downcase_exclude_rails_paths is false' do
+      let(:options) { { downcase_path: true, downcase_exclude_rails_paths: false } }
+
+      it 'downcases Rails paths when explicit opt-out is configured' do
+        get 'http://example.com/rails/active_storage/blobs/redirect/eyJf.../Avatar.PNG'
+        expect(last_response.status).to eq(301)
+        expect(last_response.headers['location']).to eq('http://example.com/rails/active_storage/blobs/redirect/eyjf.../avatar.png')
+      end
+    end
+  end
+
   describe 'allowed_locales' do
     context 'with array of allowed locales' do
       let(:options) { { allowed_locales: %w[en ru] } }
@@ -546,6 +636,17 @@ RSpec.describe Rack::UrlCanonicalizer do
       get 'http://example.com/About-Us'
       expect(last_response.status).to eq(301)
       expect(last_response.headers['location']).to eq('http://example.com/about-us')
+    end
+
+    it 'allows configuring downcase_exclude_rails_paths globally' do
+      Rack::UrlCanonicalizer.configure do |config|
+        config.downcase_path = true
+        config.downcase_exclude_rails_paths = false
+      end
+
+      get 'http://example.com/rails/info/Routes'
+      expect(last_response.status).to eq(301)
+      expect(last_response.headers['location']).to eq('http://example.com/rails/info/routes')
     end
   end
 

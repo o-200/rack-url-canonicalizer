@@ -52,6 +52,7 @@ bundle install
 | `downcase_path` | `Boolean` | `false` | Converts path to lowercase (e.g. `/About-Us` ➔ `/about-us`). Query string casing is preserved. |
 | `downcase_paths` | `Array<String \| Regexp \| Proc> \| Boolean` | `nil` | Selective allowlist: only paths matching these prefixes or patterns are downcased. |
 | `downcase_exclude_paths` | `Array<String \| Regexp \| Proc>` | `[]` | Array of path prefixes, patterns, or procs to bypass from downcasing (preserves casing for tokens/IDs). |
+| `downcase_exclude_rails_paths` | `Boolean` | `true` | Automatically preserves casing for Rails internal routes (`/rails/*` such as Active Storage signed URLs, Action Mailbox, Mailers). |
 | `exclude_paths` | `Array<String>` | `[]` | Array of path prefixes to bypass (e.g. `%w[/api /assets]`). |
 | `exclude_hosts` | `Array<String \| Regexp \| Proc>` | `[]` | Array of hosts or patterns to bypass from host redirection. |
 | `locale_param` | `String` | `"locale"` | GET parameter key for locale. |
@@ -94,6 +95,8 @@ config.middleware.use Rack::UrlCanonicalizer,
   enforce_www: true,
   exclude_hosts: %w[api.example.com]
 ```
+
+> **Note:** Rails internal routes (`/rails/*`, such as Active Storage case-sensitive signed token URLs, Action Mailbox, and Mailer previews) are automatically protected from `downcase_path` by default (`downcase_exclude_rails_paths: true`). Setting custom `downcase_exclude_paths` will complement this default rather than overwrite it.
 
 ### Sinatra / Plain Rack
 

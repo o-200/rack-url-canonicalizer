@@ -8,6 +8,7 @@ module Rack
                     :downcase_path,
                     :downcase_paths,
                     :downcase_exclude_paths,
+                    :downcase_exclude_rails_paths,
                     :exclude_paths,
                     :exclude_hosts,
                     :locale_param,
@@ -24,6 +25,7 @@ module Rack
         @downcase_path = false
         @downcase_paths = nil
         @downcase_exclude_paths = []
+        @downcase_exclude_rails_paths = true
         @exclude_paths = []
         @exclude_hosts = []
         @locale_param = 'locale'

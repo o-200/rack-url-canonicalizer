@@ -8,6 +8,7 @@ require_relative 'url_canonicalizer/railtie'
 module Rack
   class UrlCanonicalizer
     IPV4_REGEX = /\A\d{1,3}(?:\.\d{1,3}){3}\z/
+    DEFAULT_RAILS_PATH_PATTERN = %r{\A/+rails(/|\z)}i
     REDIRECT_BODIES = {
       301 => 'Moved Permanently',
       302 => 'Found',
@@ -135,6 +136,7 @@ module Rack
     end
 
     def downcase_excluded?(path)
+      return true if @config.downcase_exclude_rails_paths && DEFAULT_RAILS_PATH_PATTERN.match?(path)
       return false if @config.downcase_exclude_paths.nil? || @config.downcase_exclude_paths.empty?
 
       match_path_patterns?(@config.downcase_exclude_paths, path)
