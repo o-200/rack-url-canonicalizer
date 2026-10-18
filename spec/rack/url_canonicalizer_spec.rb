@@ -502,15 +502,15 @@ RSpec.describe Rack::UrlCanonicalizer do
           downcase_exclude_paths: ['/my-token']
         )
         env = Rack::MockRequest.env_for('http://example.com/rails/active_storage/blobs/redirect/eyJf.../Avatar.PNG')
-        status, _, _ = app_with_custom.call(env)
+        status, = app_with_custom.call(env)
         expect(status).to eq(200)
 
         env2 = Rack::MockRequest.env_for('http://example.com/my-token/AbCd')
-        status2, _, _ = app_with_custom.call(env2)
+        status2, = app_with_custom.call(env2)
         expect(status2).to eq(200)
 
         env3 = Rack::MockRequest.env_for('http://example.com/other-route/Upper')
-        status3, headers3, _ = app_with_custom.call(env3)
+        status3, headers3, = app_with_custom.call(env3)
         expect(status3).to eq(301)
         expect(headers3['location']).to eq('http://example.com/other-route/upper')
       end
